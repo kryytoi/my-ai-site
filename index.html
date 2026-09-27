@@ -195,6 +195,50 @@
     40% { opacity: 1; transform: scale(1.15) translateY(-3px); }
   }
 
+  .file-card {
+    max-width: 420px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+    transition: border-color 0.2s ease, transform 0.15s ease;
+    cursor: pointer;
+  }
+  .file-card:hover { border-color: var(--purple-dim); transform: translateY(-1px); }
+  .file-icon {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--purple-dim), var(--purple));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #14101f;
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .file-info { flex: 1; min-width: 0; }
+  .file-name {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .file-meta { font-size: 11.5px; color: var(--text-dim); }
+  .file-download {
+    flex-shrink: 0;
+    color: var(--purple);
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
   .input-area {
     padding: 16px 20px 22px;
     border-top: 1px solid var(--border);
@@ -362,6 +406,77 @@ function renderSidebar() {
   });
 }
 
+function parseFileBlocks(content) {
+  // Ищем блоки вида: ```file:имя.ext\n...содержимое...\n```
+  const regex = /```file:([^\n`]+)\n([\s\S]*?)```/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+  while ((match = regex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', content: content.slice(lastIndex, match.index) });
+    }
+    parts.push({ type: 'file', name: match[1].trim(), content: match[2] });
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < content.length) {
+    parts.push({ type: 'text', content: content.slice(lastIndex) });
+  }
+  return parts.length ? parts : [{ type: 'text', content }];
+}
+
+function downloadFile(name, content) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function buildMessageEl(m) {
+  const wrap = document.createElement('div');
+  wrap.style.display = 'contents';
+
+  const parts = parseFileBlocks(m.content);
+  const hasFile = parts.some(p => p.type === 'file');
+
+  if (!hasFile) {
+    const div = document.createElement('div');
+    div.className = 'msg ' + (m.role === 'user' ? 'user' : 'bot') + (m.error ? ' error' : '');
+    div.textContent = m.content;
+    return [div];
+  }
+
+  const elements = [];
+  parts.forEach(p => {
+    if (p.type === 'text' && p.content.trim()) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + (m.role === 'user' ? 'user' : 'bot') + (m.error ? ' error' : '');
+      div.textContent = p.content.trim();
+      elements.push(div);
+    } else if (p.type === 'file') {
+      const card = document.createElement('div');
+      card.className = 'msg bot file-card';
+      card.onclick = () => downloadFile(p.name, p.content);
+      const ext = (p.name.split('.').pop() || '?').slice(0, 3).toUpperCase();
+      const sizeKb = (new Blob([p.content]).size / 1024).toFixed(1);
+      card.innerHTML =
+        '<div class="file-icon">' + ext + '</div>' +
+        '<div class="file-info">' +
+          '<div class="file-name">' + p.name + '</div>' +
+          '<div class="file-meta">' + sizeKb + ' KB</div>' +
+        '</div>' +
+        '<div class="file-download">Скачать ↓</div>';
+      elements.push(card);
+    }
+  });
+  return elements;
+}
+
 function renderMessages() {
   const box = document.getElementById('messages');
   box.style.opacity = '0';
@@ -370,11 +485,11 @@ function renderMessages() {
     const chat = getActive();
     if (chat) {
       chat.messages.forEach((m, i) => {
-        const div = document.createElement('div');
-        div.className = 'msg ' + (m.role === 'user' ? 'user' : 'bot') + (m.error ? ' error' : '');
-        div.style.animationDelay = (i * 0.03) + 's';
-        div.textContent = m.content;
-        box.appendChild(div);
+        const elements = buildMessageEl(m);
+        elements.forEach((el, j) => {
+          el.style.animationDelay = (i * 0.03 + j * 0.02) + 's';
+          box.appendChild(el);
+        });
       });
     }
     box.style.transition = 'opacity 0.18s ease';
@@ -393,7 +508,7 @@ function renderThinking() {
   const div = document.createElement('div');
   div.className = 'msg bot';
   div.id = 'thinkingMsg';
-  div.innerHTML = '<div class="thinking">Думаю<span class="dot"></span><span class="dot"></span><span class="dot"></span></div>';
+  div.innerHTML = '<div class="thinking">Thinking<span class="dot"></span><span class="dot"></span><span class="dot"></span></div>';
   box.appendChild(div);
   box.scrollTop = box.scrollHeight;
 }
