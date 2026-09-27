@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Моя ИИ</title>
+<style>
+body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
+textarea { width: 100%; height: 80px; }
+#answer { white-space: pre-wrap; margin-top: 20px; padding: 15px; background: #f0f0f0; border-radius: 8px; }
+button { padding: 10px 20px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<h1>Спроси мою ИИ</h1>
+<textarea id="question" placeholder="Задай вопрос..."></textarea><br>
+<button onclick="ask()">Спросить</button>
+<div id="answer"></div>
+
+<script>
+async function ask() {
+  const question = document.getElementById('question').value;
+  document.getElementById('answer').innerText = "Думаю...";
+  const res = await fetch('/api/ask', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ question })
+  });
+  const data = await res.json();
+  document.getElementById('answer').innerText = data.answer || data.error;
+}
+</script>
+</body>
+</html>
