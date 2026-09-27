@@ -135,6 +135,37 @@
   .topbar .mascot { width: 28px; height: 28px; }
   .topbar strong { color: var(--text); font-weight: 600; }
 
+  .workspace-toggle {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  }
+  .workspace-toggle:hover { border-color: var(--purple-dim); color: var(--text); }
+  .workspace-toggle.active {
+    background: rgba(167, 139, 250, 0.14);
+    border-color: var(--purple);
+    color: var(--purple);
+  }
+  .ws-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    transition: background 0.2s ease, box-shadow 0.2s ease;
+  }
+  .workspace-toggle.active .ws-dot {
+    background: var(--purple);
+    box-shadow: 0 0 8px var(--purple);
+  }
+
   .messages {
     flex: 1;
     overflow-y: auto;
@@ -243,6 +274,52 @@
     padding: 16px 20px 22px;
     border-top: 1px solid var(--border);
   }
+  .attachments-bar {
+    max-width: 720px;
+    margin: 0 auto 8px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .attachments-bar:empty { display: none; }
+  .attach-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 5px 9px;
+    font-size: 12px;
+    color: var(--text-dim);
+    animation: msgIn 0.25s ease both;
+  }
+  .attach-chip img {
+    width: 22px; height: 22px; object-fit: cover; border-radius: 4px;
+  }
+  .attach-chip .remove {
+    cursor: pointer;
+    color: var(--text-dim);
+    font-size: 14px;
+    transition: color 0.15s ease;
+  }
+  .attach-chip .remove:hover { color: #e8b4b4; }
+
+  .attach-btn {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    align-self: flex-end;
+    transition: border-color 0.2s ease, color 0.2s ease, transform 0.12s ease;
+  }
+  .attach-btn:hover { border-color: var(--purple-dim); color: var(--purple); }
+  .attach-btn:active { transform: scale(0.93); }
   .input-row {
     max-width: 720px;
     margin: 0 auto;
@@ -322,13 +399,20 @@
         <ellipse cx="64" cy="48" rx="5.5" ry="7" fill="#a78bfa"/>
       </svg>
       <span><strong>Darka 0.1</strong> · разработана Mr Darko</span>
+      <div class="workspace-toggle" id="workspaceToggle" onclick="toggleWorkspace()">
+        <span class="ws-dot"></span>
+        <span>Workspace</span>
+      </div>
     </div>
 
     <div class="messages" id="messages"></div>
 
     <div class="input-area">
+      <div class="attachments-bar" id="attachmentsBar"></div>
       <div class="input-row">
-        <textarea id="question" placeholder="Напиши сообщение..." rows="1"></textarea>
+        <button class="attach-btn" id="attachBtn" title="Прикрепить файл или изображение" onclick="document.getElementById('fileInput').click()">+</button>
+        <input type="file" id="fileInput" multiple style="display:none" onchange="handleFilePick(event)">
+        <textarea id="question" placeholder="Напиши сообщение... (Ctrl+V вставит скриншот)" rows="1"></textarea>
         <button class="send" id="askBtn" onclick="ask()">Отправить</button>
       </div>
       <div class="hint">Darka 0.1 может ошибаться. Enter — отправить, Shift+Enter — новая строка.</div>
@@ -339,6 +423,8 @@
 const STORAGE_KEY = 'darka_chats_v1';
 let chats = [];
 let activeId = null;
+let attachments = []; // { name, isImage, dataUrl, textContent }
+let workspaceMode = false;
 
 function load() {
   try {
@@ -478,29 +564,32 @@ function buildMessageEl(m) {
 }
 
 function renderMessages() {
-  const box = document.getElementById('messages');
-  box.style.opacity = '0';
-  setTimeout(() => {
-    box.innerHTML = '';
-    const chat = getActive();
-    if (chat) {
-      chat.messages.forEach((m, i) => {
-        const elements = buildMessageEl(m);
-        elements.forEach((el, j) => {
-          el.style.animationDelay = (i * 0.03 + j * 0.02) + 's';
-          box.appendChild(el);
+  return new Promise(resolve => {
+    const box = document.getElementById('messages');
+    box.style.opacity = '0';
+    setTimeout(() => {
+      box.innerHTML = '';
+      const chat = getActive();
+      if (chat) {
+        chat.messages.forEach((m, i) => {
+          const elements = buildMessageEl(m);
+          elements.forEach((el, j) => {
+            el.style.animationDelay = (i * 0.03 + j * 0.02) + 's';
+            box.appendChild(el);
+          });
         });
-      });
-    }
-    box.style.transition = 'opacity 0.18s ease';
-    box.style.opacity = '1';
-    box.scrollTop = box.scrollHeight;
-  }, 60);
+      }
+      box.style.transition = 'opacity 0.18s ease';
+      box.style.opacity = '1';
+      box.scrollTop = box.scrollHeight;
+      resolve();
+    }, 60);
+  });
 }
 
 function renderAll() {
   renderSidebar();
-  renderMessages();
+  return renderMessages();
 }
 
 function renderThinking() {
@@ -522,20 +611,34 @@ function specialReply(question) {
 async function ask() {
   const input = document.getElementById('question');
   const question = input.value.trim();
-  if (!question) return;
+  if (!question && attachments.length === 0) return;
 
   const chat = getActive();
   const btn = document.getElementById('askBtn');
 
+  const attachedNote = attachments.length
+    ? '\n\n[Прикреплено: ' + attachments.map(a => a.name).join(', ') + ']'
+    : '';
+  const textAttachmentsContent = attachments
+    .filter(a => !a.isImage)
+    .map(a => '\n\n--- Файл ' + a.name + ' ---\n' + a.textContent)
+    .join('');
+
   if (chat.messages.length === 0) {
-    chat.title = question.slice(0, 30) + (question.length > 30 ? '…' : '');
+    chat.title = (question || 'Вложение').slice(0, 30) + ((question || '').length > 30 ? '…' : '');
   }
 
-  chat.messages.push({ role: 'user', content: question });
+  const imagesForMsg = attachments.filter(a => a.isImage).map(a => a.dataUrl);
+  chat.messages.push({
+    role: 'user',
+    content: (question || 'Посмотри на вложение') + attachedNote + textAttachmentsContent,
+    images: imagesForMsg.length ? imagesForMsg : undefined
+  });
   input.value = '';
   input.style.height = 'auto';
+  clearAttachments();
   save();
-  renderAll();
+  await renderAll();
 
   const canned = specialReply(question);
   if (canned !== null) {
@@ -552,7 +655,7 @@ async function ask() {
     const res = await fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: chat.messages })
+      body: JSON.stringify({ messages: chat.messages, workspace: workspaceMode })
     });
     const data = await res.json();
     document.getElementById('thinkingMsg')?.remove();
@@ -582,6 +685,78 @@ ta.addEventListener('keydown', function(e) {
     ask();
   }
 });
+
+function renderAttachments() {
+  const bar = document.getElementById('attachmentsBar');
+  bar.innerHTML = '';
+  attachments.forEach((a, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'attach-chip';
+    if (a.isImage) {
+      const img = document.createElement('img');
+      img.src = a.dataUrl;
+      chip.appendChild(img);
+    }
+    const name = document.createElement('span');
+    name.textContent = a.name;
+    chip.appendChild(name);
+    const rm = document.createElement('span');
+    rm.className = 'remove';
+    rm.textContent = '×';
+    rm.onclick = () => { attachments.splice(i, 1); renderAttachments(); };
+    chip.appendChild(rm);
+    bar.appendChild(chip);
+  });
+}
+
+function clearAttachments() {
+  attachments = [];
+  renderAttachments();
+}
+
+function addImageAttachment(file, name) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    attachments.push({ name: name || file.name || 'скриншот.png', isImage: true, dataUrl: reader.result });
+    renderAttachments();
+  };
+  reader.readAsDataURL(file);
+}
+
+function addTextAttachment(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    attachments.push({ name: file.name, isImage: false, textContent: reader.result });
+    renderAttachments();
+  };
+  reader.readAsText(file);
+}
+
+function handleFilePick(event) {
+  const files = Array.from(event.target.files || []);
+  files.forEach(file => {
+    if (file.type.startsWith('image/')) addImageAttachment(file);
+    else addTextAttachment(file);
+  });
+  event.target.value = '';
+}
+
+document.addEventListener('paste', function(e) {
+  const items = Array.from(e.clipboardData?.items || []);
+  const imageItem = items.find(it => it.type.startsWith('image/'));
+  if (imageItem) {
+    const file = imageItem.getAsFile();
+    addImageAttachment(file, 'скриншот-' + Date.now() + '.png');
+  }
+});
+
+function toggleWorkspace() {
+  workspaceMode = !workspaceMode;
+  document.getElementById('workspaceToggle').classList.toggle('active', workspaceMode);
+  document.getElementById('question').placeholder = workspaceMode
+    ? 'Workspace включён — кодинг, файлы, анализ изображений...'
+    : 'Напиши сообщение... (Ctrl+V вставит скриншот)';
+}
 
 load();
 renderAll();
